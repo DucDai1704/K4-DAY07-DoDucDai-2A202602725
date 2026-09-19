@@ -122,6 +122,41 @@ class RecursiveChunker:
         return merged
 
 
+class HeadingChunker:
+    HEADING = re.compile(r"^(#{2,6}\s+\S.*|Điều\s+\d+.*)$", re.MULTILINE)
+
+    def __init__(self, chunk_size: int = 500, drop_notes: bool = True) -> None:
+        self.chunk_size = chunk_size
+        self.drop_notes = drop_notes
+
+    def chunk(self, text: str) -> list[str]:
+        starts = [m.start() for m in self.HEADING.finditer(text)]
+        if not starts:
+            return RecursiveChunker(chunk_size=self.chunk_size).chunk(text)
+
+        preamble = text[: starts[0]].strip()
+        if self.drop_notes:
+            preamble = "\n".join(line for line in preamble.splitlines() if not line.startswith(">")).strip()
+        chunks: list[str] = []
+        for begin, end in zip(starts, starts[1:] + [len(text)]):
+            section = text[begin:end].strip()
+            if section:
+                chunks.extend(self._split_section(section))
+        if preamble:
+            if chunks:
+                chunks[0] = f"{preamble}\n\n{chunks[0]}"
+            else:
+                chunks.append(preamble)
+        return chunks
+
+    def _split_section(self, section: str) -> list[str]:
+        if len(section) <= self.chunk_size:
+            return [section]
+        heading, _, body = section.partition("\n")
+        inner_size = max(self.chunk_size - len(heading) - 1, 100)
+        return [f"{heading}\n{piece}" for piece in RecursiveChunker(chunk_size=inner_size).chunk(body)]
+
+
 def _dot(a: list[float], b: list[float]) -> float:
     return sum(x * y for x, y in zip(a, b))
 
